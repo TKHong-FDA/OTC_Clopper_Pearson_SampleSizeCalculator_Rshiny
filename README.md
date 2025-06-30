@@ -45,7 +45,11 @@ The application implements the Clopper-Pearson exact method for constructing con
 
 ## Contact
 Taekwon Hong
+
 Division of Biometrics VII, OB, OTS, CDER
+
 U.S. Food and Drug Administration
+
 Department of Health and Human Services
+
 taekwon.hong@fda.hhs.gov
