@@ -7,7 +7,7 @@ An interactive R Shiny web application for calculating sample sizes using the tw
 
 ## Features
 - **Power-Based Calculation**: Determine required sample size based on desired statistical power, null hypothesis proportion, and alternative hypothesis proportion
-- **Precision-Based Calculation**: Calculate sample size based on target threshold and maximum precision requirements
+- **Precision-Based Calculation**: Calculate sample size based on target threshold and precision requirements
 - **Interactive Visualization**: Monte Carlo simulation plots showing statistical power analysis with 10,000 iterations
 
 
@@ -29,7 +29,7 @@ The application implements the Clopper-Pearson exact method for constructing con
 
 **Precision-Based Method:**
 - Target Threshold (%) - Prespecified performance threshold (0.1-99.9%)
-- Maximum Precision (%) - Maximum allowable precision (0.1-10%)
+- Target Precision (%) - Maximum allowable precision (0.1-10%)
 
 ### Output
 - **Results Table**: Sample size requirements with relevant statistical parameters
