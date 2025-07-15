@@ -2,7 +2,6 @@
 library(shiny)
 library(shinyjs)
 library(shinycssloaders)
-library(samplingbook)
 library(DT)
 library(dplyr)
 library(ggplot2)
@@ -10,21 +9,20 @@ library(ggplot2)
 
 ### Precision-based Sample Size Calculator
 clopper.pearson.sample.size <- function(min = 20, max = 1500, stepsize = 5, thres, max_precision,
-                                        alpha = 0.05) {
+                                        alpha = 0.025) {
   p = (thres+max_precision)/100   # Using equation: d (precision) <= d* (maximum precision) = p (expected proportion) - p0 (threshold)
   n <- seq(min, max, by = stepsize)
   fin <- data.frame()
   stop <- 0
   
   for (i in n) {
-    CPCI <- Sprop(m = round(i * p), n = i, level = (1 - alpha))$ci$cp
-    act_proportion <- round(i * p)*100/i  # Observed proportion can be different from the expected proportion due to rounding
-    lb <- CPCI[1]*100
-    ub <- CPCI[2]*100
+    lbd_CPCI <- binom.test(x = floor(i * p), n = i, p = p, alternative = 'greater', conf.level = (1-alpha))$conf.int[1]
+    act_proportion <- floor(i * p)*100/i  # Observed proportion can be different from the expected proportion due to rounding
+    lb <- lbd_CPCI*100
     lb_err <- (act_proportion - max_precision - lb)
     act_precision <- act_proportion - lb   # Actual precision (<= d*) : Observed proportion - Derived lower bound
     
-    if ((lb_err < 0)&(lb > thres)) {
+    if (lb > thres) {
       df <- data.frame(Proportion = act_proportion,
                        Precision = act_precision,
                        Size = i)
@@ -44,7 +42,7 @@ clopper.pearson.sample.size <- function(min = 20, max = 1500, stepsize = 5, thre
 }
 
 ### Power-based Sample Size Calculator
-powerbased_CP = function(p0, p1, alpha = 0.05, power, stepsize=5, max=1500) {
+powerbased_CP = function(p0, p1, alpha = 0.025, power, stepsize=5, max=1500) {
   ntotal <- seq(from=20, to=max, by=stepsize)  
   
   powers = c()
@@ -56,32 +54,40 @@ powerbased_CP = function(p0, p1, alpha = 0.05, power, stepsize=5, max=1500) {
     # Determine rejection region using binomial test under H0
     x_vals <- 0:n
     cis = sapply(x_vals, function(x)
-      binom.test(x, n, p=p0, alternative = 'two.sided')$conf.int)
+      binom.test(x, n, p=p0, alternative = 'greater', conf.level = (1-alpha))$conf.int)
     reject_rej = apply(cis, 2, function(x) {
-      if (p0<x[1]|p0>x[2]) {return(T)} else {return(F)}
+      if (p0<x[1]) {return(T)} else {return(F)}
     })
-    
-    # Rejection region 
-    reject_x <- x_vals[reject_rej]
-    accept_x <- x_vals[!reject_rej]
-    
-    # Critical values
-    lower_crit <- c(lower_crit, min(accept_x)-1)
-    upper_crit <- c(upper_crit, max(accept_x)+1)
-    
-    # Actual alpha (<= prespecified alpha 0.05)
-    actual_alpha <- c(actual_alpha, round(max(sapply(reject_x, function(x)
-      binom.test(x, n, p=p0, alternative = 'two.sided')$p.value)),4))
-    
-    # Power: probability under p_alt of rejecting H0
-    cal_power <- round(sum(dbinom(reject_x, n, p1)),3)
-    powers = c(powers, cal_power)
-    
-    if (cal_power >= power) {stop = stop + 1}
-    if (stop >0) {
-      ntotal = ntotal[ntotal<=n]
-      break
-    }
+    if (sum(reject_rej) >0 ) {
+      # Rejection region 
+      reject_x <- x_vals[reject_rej]
+      accept_x <- x_vals[!reject_rej]
+      
+      # Critical values
+      lower_crit <- c(lower_crit, NA) #min(accept_x)-1)
+      upper_crit <- c(upper_crit, max(accept_x)+1)
+      
+      # Actual alpha (<= prespecified alpha 0.05)
+      actual_alpha <- c(actual_alpha, round(max(sapply(reject_x, function(x)
+        binom.test(x, n, p=p0, alternative = 'greater', conf.level = (1-alpha))$p.value)),4))
+      
+      # Power: probability under p_alt of rejecting H0
+      cal_power <- round(sum(dbinom(reject_x, n, p1)),3)
+      powers = c(powers, cal_power)
+      
+      if (cal_power >= power) {stop = stop + 1}
+      if (stop >0) {
+        ntotal = ntotal[ntotal<=n]
+        break
+      }  
+    } else {
+      # Critical values
+      lower_crit <- c(lower_crit, NA)
+      upper_crit <- c(upper_crit, NA)
+      actual_alpha <- c(actual_alpha, 0)
+      powers = c(powers, 0)
+      
+    } 
   }
   ## This will not be shown in the result; however, they are mimicking PROC POWER onesamplefreq test=exact result ##
   minitab = data.frame(Ntotal = ntotal, lower = lower_crit, upper = upper_crit, alpha = actual_alpha, power = powers)
@@ -110,14 +116,14 @@ Visualization_power = function(alpha, p0, p1, n, iter = 10000) {
   ## Exact Calculation
   x_vals <- 0:n
   pvals <- sapply(x_vals, function(x)
-    binom.test(x, n, p = p0, alternative = "two.sided")$p.value)
+    binom.test(x, n, p=p0, alternative = 'greater', conf.level = (1-alpha))$p.value)
   
   # Rejection region (p < alpha)
-  reject_x <- x_vals[pvals < 0.05]
-  accept_x <- x_vals[pvals >= 0.05]
+  reject_x <- x_vals[pvals < alpha]
+  accept_x <- x_vals[pvals >= alpha]
   lower_crit <- min(accept_x)-1
   upper_crit <- max(accept_x)+1
-  actual_alpha <- round(max(pvals[pvals<0.05]),4)
+  actual_alpha <- round(max(pvals[pvals<alpha]),4)
   
   # Power: probability under p_alt of rejecting H0
   cal_power <- round(sum(dbinom(reject_x, n, p1)),3)
@@ -127,11 +133,11 @@ Visualization_power = function(alpha, p0, p1, n, iter = 10000) {
   
   # Simulation (Null hypothesis)
   x0 = rbinom(iter, n, p0)  # Simulated data 
-  p0_lb = suppressWarnings(sapply(x0, function(x) Sprop(m = x, n = n, level = (1 - alpha))$ci$cp)[1,]) # Clopper-Pearson 95% LB
-  
+  p0_lb = suppressWarnings(sapply(x0, function(x) binom.test(x, n, p=p0, alternative = 'greater', conf.level = (1-alpha))$conf.int[1])) # Clopper-Pearson LB
+
   # Simulation (Alternative hypothesis)
   x1 = rbinom(iter, n, p1)  # Simulated data 
-  p1_lb = suppressWarnings(sapply(x1, function(x) Sprop(m = x, n = n, level = (1 - alpha))$ci$cp)[1,]) # Clopper-Pearson 95% LB
+  p1_lb = suppressWarnings(sapply(x1, function(x) binom.test(x, n, p=p0, alternative = 'greater', conf.level = (1-alpha))$conf.int[1])) # Clopper-Pearson LB
   
   # Calculate standard error for the alternative hypothesis
   lbs = c(p0_lb, p1_lb)
@@ -149,7 +155,7 @@ Visualization_power = function(alpha, p0, p1, n, iter = 10000) {
   ggplot(df, aes(x = LB, fill = Hypothesis)) +
     geom_histogram(position = "identity", alpha = 0.7, bins = 50) +
     geom_vline(xintercept = p0, linetype = "dashed", color = "red") +
-    labs(x = "Lower Bound of 95% Clopper-Pearson Confidence Interval", y = "Count", 
+    labs(x = "Lower Bound of 97.5% Clopper-Pearson One-sided Confidence Interval", y = "Count", 
          title = "Statistical Power Analysis: Monte Carlo Simulation with 10,000 Iterations",
          subtitle = paste0("Analytical Power =", round(cal_power, 3)*100,"%, ", 
                            "Simulated Power = ", round(power_observed, 3)*100,"%")) +
@@ -165,7 +171,7 @@ ui <- fluidPage(
     sidebarPanel(
       wellPanel(
         h3("Overview", style = "margin-bottom: 10px;"),
-        p("This application estimates the required sample size based on the two-sided Clopper-Pearson exact confidence interval (95% CI)."),
+        p("This application estimates the required sample size based on the one-sided Clopper-Pearson exact confidence interval (alpha = 0.025)."),
         p("The sample size search range is fixed between 20 and 1500, with a default increment of 5 per iteration."),
         p("Please provide the necessary inputs below to begin the calculation.")
       ),
@@ -253,6 +259,7 @@ server <- function(input, output) {
     params$method <- "Precision-Based"
     params$threshold <- input$threshold
     params$max_precision <- input$max_precision
+    params$p1 <- input$threshold + input$max_precision
     
     req(params$threshold, params$max_precision)
     
@@ -302,16 +309,16 @@ server <- function(input, output) {
     
     if (params$method == "Power-Based" && !is.null(result())) {
       Visualization_power(
-        alpha = 0.05,
+        alpha = 0.025,
         p0 = params$p0 / 100,
         p1 = params$p1 / 100,
         n = result()$`Required sample size`
       )
     } else if (params$method == "Precision-Based" && !is.null(result()) ) {
       Visualization_power(
-        alpha = 0.05,
+        alpha = 0.025,
         p0 = params$threshold / 100,
-        p1 = result()$`Observed Proportion (%)` / 100,
+        p1 = params$p1 / 100,
         n = result()$`Sample Size`
       )
     }
