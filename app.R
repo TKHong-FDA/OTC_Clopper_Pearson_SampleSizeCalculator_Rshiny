@@ -184,7 +184,7 @@ ui <- fluidPage(
                   ),
                   tabPanel("Precision-Based",
                            numericInput("threshold", "Target Threshold (%)", value = NA, min = 0.1, max = 99.9, step = 0.1),
-                           numericInput("max_precision", "Maximum Precision (%)", value = NA, min = 0.1, max = 10, step = 0.1),
+                           numericInput("max_precision", "Target Precision (%)", value = NA, min = 0.1, max = 10, step = 0.1),
                            actionButton("run_precision", "Run Precision-Based Calculation")
                   )
       )
