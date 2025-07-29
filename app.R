@@ -270,15 +270,6 @@ server <- function(input, output) {
       return()
     }
     
-    # Error message case 2
-    if (params$power < 1 || params$power > 99) {
-      error_state(TRUE)
-      error_message("Power should be between 1% and 99% for computational stability.")
-      result(NULL)
-      return()
-    }
-    
-    
     withProgress(message = "Calculating required sample size...", value = 0.5, {
       calc_result <- powerbased_CP(
         p0 = params$p0 / 100,
@@ -316,14 +307,6 @@ server <- function(input, output) {
     if (params$max_precision <= 0) {
       error_state(TRUE)
       error_message("Expected proportion must be greater than the threshold.")
-      result(NULL)
-      return()
-    }
-    
-    # Error message case 2
-    if (params$threshold >= 99 || params$p1 >= 99) {
-      error_state(TRUE)
-      error_message("Inputs should be less than 99% for computational stability.")
       result(NULL)
       return()
     }
