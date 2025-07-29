@@ -2,7 +2,7 @@
 
 
 ## Overview
-An interactive R Shiny web application for calculating sample sizes using the one-sided Clopper-Pearson exact confidence interval method. This tool supports both power-based and precision-based sample size calculations with visualization based on Monte Carlo simulation.
+An interactive R Shiny web application for calculating sample sizes using the one-sided Clopper-Pearson exact confidence interval method (alpha = 0.025). This tool supports both power-based and precision-based sample size calculations with visualization based on Monte Carlo simulation.
 
 
 ## Features
