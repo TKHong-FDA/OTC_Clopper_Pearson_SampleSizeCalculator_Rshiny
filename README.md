@@ -2,13 +2,13 @@
 
 
 ## Overview
-An interactive R Shiny web application for calculating sample sizes using the two-sided Clopper-Pearson exact confidence interval method. This tool supports both power-based and precision-based sample size calculations with real-time visualization based on simulation.
+An interactive R Shiny web application for calculating sample sizes using the one-sided Clopper-Pearson exact confidence interval method. This tool supports both power-based and precision-based sample size calculations with visualization based on Monte Carlo simulation.
 
 
 ## Features
 - **Power-Based Calculation**: Determine required sample size based on desired statistical power, null hypothesis proportion, and alternative hypothesis proportion
-- **Precision-Based Calculation**: Calculate sample size based on target threshold and precision requirements
-- **Interactive Visualization**: Monte Carlo simulation plots showing statistical power analysis with 10,000 iterations
+- **Precision-Based Calculation**: Calculate sample size based on target threshold and expected proportion
+- **Interactive Visualization**: Monte Carlo simulation plots showing simulated statistical power (with 10000 iterations) and analytical power
 
 
 ## Methodology
@@ -29,7 +29,7 @@ The application implements the Clopper-Pearson exact method for constructing con
 
 **Precision-Based Method:**
 - Target Threshold (%) - Prespecified performance threshold (0.1-99.9%)
-- Target Precision (%) - Maximum allowable precision (0.1-10%)
+- Expected Proportion (%) - Maximum allowable precision (0.1-99.9%)
 
 ### Output
 - **Results Table**: Sample size requirements with relevant statistical parameters
