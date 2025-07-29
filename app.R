@@ -10,30 +10,31 @@ library(ggplot2)
 ### Precision-based Sample Size Calculator
 clopper.pearson.sample.size <- function(min = 20, max = 1500, stepsize = 5, thres, max_precision,
                                         alpha = 0.025) {
-  p = (thres+max_precision)/100   # Using equation: d (precision) <= d* (maximum precision) = p (expected proportion) - p0 (threshold)
+  p = (thres+max_precision)/100   # Note that actual precision <= Target precision = expected proportion - threshold
   n <- seq(min, max, by = stepsize)
   fin <- data.frame()
   stop <- 0
+  res <- NA
   
   for (i in n) {
     lbd_CPCI <- binom.test(x = floor(i * p), n = i, p = p, alternative = 'greater', conf.level = (1-alpha))$conf.int[1]
-    act_proportion <- floor(i * p)*100/i  # Observed proportion can be different from the expected proportion due to rounding
+    act_proportion <- floor(i * p)*100/i  # Observed proportion can be different from the expected proportion due to flooring
     lb <- lbd_CPCI*100
     lb_err <- (act_proportion - max_precision - lb)
-    act_precision <- act_proportion - lb   # Actual precision (<= d*) : Observed proportion - Derived lower bound
+    act_precision <- act_proportion - lb   # Actual precision : Observed proportion - Derived lower bound
     
     if (lb > thres) {
-      df <- data.frame(Proportion = act_proportion,
-                       Precision = act_precision,
-                       Size = i)
+      res <- data.frame(Proportion = act_proportion,
+                        Precision = act_precision,
+                        Size = i)
       stop = stop + 1
     }
     if (stop >0) {break}
   }
   
-  if (nrow(df)!=0) {
-    colnames(df) <- c( "Observed Proportion (%)", "Precision (%)", "Sample Size")
-    result = df
+  if (sum(!is.na(res))>0) {
+    colnames(res) <- c( "Observed Proportion (%)", "Observed Precision (%)", "Sample Size")
+    result = res
   } else {
     result = "Out of range"
   }
@@ -67,7 +68,7 @@ powerbased_CP = function(p0, p1, alpha = 0.025, power, stepsize=5, max=1500) {
       lower_crit <- c(lower_crit, NA) #min(accept_x)-1)
       upper_crit <- c(upper_crit, max(accept_x)+1)
       
-      # Actual alpha (<= prespecified alpha 0.05)
+      # Actual alpha (<= prespecified alpha 0.025)
       actual_alpha <- c(actual_alpha, round(max(sapply(reject_x, function(x)
         binom.test(x, n, p=p0, alternative = 'greater', conf.level = (1-alpha))$p.value)),4))
       
@@ -100,7 +101,7 @@ powerbased_CP = function(p0, p1, alpha = 0.025, power, stepsize=5, max=1500) {
   if (nrow(result)!=0) {
     result = result %>% filter(size == min(size)) %>% dplyr::select(-diff)
     colnames(result) = c("Power (%)", "Null Hypothesis Proportion (H0)", 
-                         "Alternative Hypothesis Proportion (H1)", #"Mean 95% Clopper-Pearson LB (%)", 
+                         "Alternative Hypothesis Proportion (H1)", 
                          "Required sample size")
   } else {
     result = "Out of range"
@@ -110,7 +111,9 @@ powerbased_CP = function(p0, p1, alpha = 0.025, power, stepsize=5, max=1500) {
   return(result)
 }
 
-### Plot generator under Monte Carlo simulation
+### Plot generator under Monte Carlo (MC) simulation
+### Note: Power can be analyticially computed due to the nature of exact method;
+###       however, we just provide MC simulation result for confirmation/visualization
 Visualization_power = function(alpha, p0, p1, n, iter = 10000) {
   
   ## Exact Calculation
@@ -120,47 +123,56 @@ Visualization_power = function(alpha, p0, p1, n, iter = 10000) {
   
   # Rejection region (p < alpha)
   reject_x <- x_vals[pvals < alpha]
-  accept_x <- x_vals[pvals >= alpha]
-  lower_crit <- min(accept_x)-1
-  upper_crit <- max(accept_x)+1
-  actual_alpha <- round(max(pvals[pvals<alpha]),4)
   
-  # Power: probability under p_alt of rejecting H0
-  cal_power <- round(sum(dbinom(reject_x, n, p1)),3)
-  
-  ## Simulation
-  set.seed(10903)
-  
-  # Simulation (Null hypothesis)
-  x0 = rbinom(iter, n, p0)  # Simulated data 
-  p0_lb = suppressWarnings(sapply(x0, function(x) binom.test(x, n, p=p0, alternative = 'greater', conf.level = (1-alpha))$conf.int[1])) # Clopper-Pearson LB
-
-  # Simulation (Alternative hypothesis)
-  x1 = rbinom(iter, n, p1)  # Simulated data 
-  p1_lb = suppressWarnings(sapply(x1, function(x) binom.test(x, n, p=p0, alternative = 'greater', conf.level = (1-alpha))$conf.int[1])) # Clopper-Pearson LB
-  
-  # Calculate standard error for the alternative hypothesis
-  lbs = c(p0_lb, p1_lb)
-  
-  # Create a data frame for plotting
-  df <- data.frame(Hypothesis = c(rep("Null Hypothesis", length(p0_lb)),
-                                  rep("Alternative Hypothesis", length(p1_lb))),
-                   LB = lbs)
-  
-  # Compute alpha and power
-  alpha_observed <- mean(p0_lb > p0)
-  power_observed <- mean(p1_lb > p0)
-  
-  # Create the plot
-  ggplot(df, aes(x = LB, fill = Hypothesis)) +
-    geom_histogram(position = "identity", alpha = 0.7, bins = 50) +
-    geom_vline(xintercept = p0, linetype = "dashed", color = "red") +
-    labs(x = "Lower Bound of 97.5% Clopper-Pearson One-sided Confidence Interval", y = "Count", 
-         title = "Statistical Power Analysis: Monte Carlo Simulation with 10,000 Iterations",
-         subtitle = paste0("Analytical Power =", round(cal_power, 3)*100,"%, ", 
-                           "Simulated Power = ", round(power_observed, 3)*100,"%")) +
-    theme_minimal() +
-    scale_fill_brewer(palette = "Set2")
+  if (length(reject_x) == 0) {
+    # Handle case where no rejection region exists
+    return(ggplot() + 
+             geom_text(aes(x = 0.5, y = 0.5, label = "No rejection region found"), 
+                       size = 6) +
+             theme_void())
+  } else {
+    accept_x <- x_vals[pvals >= alpha]
+    lower_crit <- min(accept_x)-1
+    upper_crit <- max(accept_x)+1
+    actual_alpha <- round(max(pvals[pvals<alpha]),4)
+    
+    # Power: probability under p_alt of rejecting H0
+    cal_power <- round(sum(dbinom(reject_x, n, p1)),3)
+    
+    ## Simulation
+    set.seed(10903)
+    
+    # Simulation (Null hypothesis)
+    x0 = rbinom(iter, n, p0)  # Simulated data 
+    p0_lb = suppressWarnings(sapply(x0, function(x) binom.test(x, n, p=p0, alternative = 'greater', conf.level = (1-alpha))$conf.int[1])) # Clopper-Pearson LB
+    
+    # Simulation (Alternative hypothesis)
+    x1 = rbinom(iter, n, p1)  # Simulated data 
+    p1_lb = suppressWarnings(sapply(x1, function(x) binom.test(x, n, p=p0, alternative = 'greater', conf.level = (1-alpha))$conf.int[1])) # Clopper-Pearson LB
+    
+    # Calculate standard error for the alternative hypothesis
+    lbs = c(p0_lb, p1_lb)
+    
+    # Create a data frame for plotting
+    df <- data.frame(Hypothesis = c(rep("Null Hypothesis", length(p0_lb)),
+                                    rep("Alternative Hypothesis", length(p1_lb))),
+                     LB = lbs)
+    
+    # Compute alpha and power
+    alpha_observed <- mean(p0_lb > p0)
+    power_observed <- mean(p1_lb > p0)
+    
+    # Create the plot
+    ggplot(df, aes(x = LB, fill = Hypothesis)) +
+      geom_histogram(position = "identity", alpha = 0.7, bins = 50) +
+      geom_vline(xintercept = p0, linetype = "dashed", color = "red") +
+      labs(x = "Lower Bound of 97.5% Clopper-Pearson One-sided Confidence Interval", y = "Count", 
+           title = "Statistical Power Analysis: Monte Carlo Simulation with 10,000 Iterations",
+           subtitle = paste0("Analytical Power =", round(cal_power, 3)*100,"%, ", 
+                             "Simulated Power = ", round(power_observed, 3)*100,"%")) +
+      theme_minimal() +
+      scale_fill_brewer(palette = "Set2")
+  }
 }
 
 # UI
@@ -184,7 +196,9 @@ ui <- fluidPage(
                   ),
                   tabPanel("Precision-Based",
                            numericInput("threshold", "Target Threshold (%)", value = NA, min = 0.1, max = 99.9, step = 0.1),
-                           numericInput("max_precision", "Target Precision (%)", value = NA, min = 0.1, max = 10, step = 0.1),
+                           numericInput("exp_proportion", "Expected Proportion (%)", value = NA, min = 0.1, max = 99.9, step = 0.1),
+                           div(style = "margin: 10px 0; padding: 8px; background-color: #f8f9fa; border-left: 4px solid #007bff;",
+                               textOutput("threshold_display")),
                            actionButton("run_precision", "Run Precision-Based Calculation")
                   )
       )
@@ -221,6 +235,24 @@ server <- function(input, output) {
   # Create a reactive value to store the calculation result
   result <- reactiveVal(NULL)
   
+  # Target precision
+  max_precision <- reactive({
+    if (!is.na(input$threshold) && !is.na(input$exp_proportion)) {
+      input$exp_proportion - input$threshold
+    } else {
+      NULL
+    }
+  })
+  
+  # To display the expected proportion
+  output$threshold_display <- renderText({
+    if (!is.null(max_precision())) {
+      paste0("Target Precision: ", round(max_precision(), 1), "%")
+    } else {
+      "Target Precision: Please enter valid threshold and expected proportion values"
+    }
+  })
+  
   # Observe Power-Based action button
   observeEvent(input$run_power, {
     params$method <- "Power-Based"
@@ -229,6 +261,23 @@ server <- function(input, output) {
     params$p1 <- input$p1
     
     req(params$power, params$p0, params$p1)
+    
+    # Error message case 1
+    if (params$p1 <= params$p0) {
+      error_state(TRUE)
+      error_message("Alternative hypothesis proportion must be greater than null hypothesis proportion.")
+      result(NULL)
+      return()
+    }
+    
+    # Error message case 2
+    if (params$power < 1 || params$power > 99) {
+      error_state(TRUE)
+      error_message("Power should be between 1% and 99% for computational stability.")
+      result(NULL)
+      return()
+    }
+    
     
     withProgress(message = "Calculating required sample size...", value = 0.5, {
       calc_result <- powerbased_CP(
@@ -258,10 +307,26 @@ server <- function(input, output) {
   observeEvent(input$run_precision, {
     params$method <- "Precision-Based"
     params$threshold <- input$threshold
-    params$max_precision <- input$max_precision
-    params$p1 <- input$threshold + input$max_precision
+    params$p1 <- input$exp_proportion
+    params$max_precision <- input$exp_proportion - input$threshold
     
-    req(params$threshold, params$max_precision)
+    req(params$threshold, params$p1, params$max_precision)
+    
+    # Error message case 1
+    if (params$max_precision <= 0) {
+      error_state(TRUE)
+      error_message("Expected proportion must be greater than the threshold.")
+      result(NULL)
+      return()
+    }
+    
+    # Error message case 2
+    if (params$threshold >= 99 || params$p1 >= 99) {
+      error_state(TRUE)
+      error_message("Inputs should be less than 99% for computational stability.")
+      result(NULL)
+      return()
+    }
     
     withProgress(message = "Calculating required sample size...", value = 0.5, {
       calc_result <- clopper.pearson.sample.size(
@@ -303,7 +368,7 @@ server <- function(input, output) {
     }
   })
   
-  # Add this reactive expression to generate the plot
+  # Reactive expression to generate the plot
   plot_data <- reactive({
     req(result())
     
