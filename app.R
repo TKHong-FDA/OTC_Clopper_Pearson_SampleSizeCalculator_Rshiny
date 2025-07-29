@@ -168,7 +168,7 @@ Visualization_power = function(alpha, p0, p1, n, iter = 10000) {
       geom_vline(xintercept = p0, linetype = "dashed", color = "red") +
       labs(x = "Lower Bound of 97.5% Clopper-Pearson One-sided Confidence Interval", y = "Count", 
            title = "Statistical Power Analysis: Monte Carlo Simulation with 10,000 Iterations",
-           subtitle = paste0("Analytical Power =", round(cal_power, 3)*100,"%, ", 
+           subtitle = paste0("Analytical Power = ", round(cal_power, 3)*100,"%, ", 
                              "Simulated Power = ", round(power_observed, 3)*100,"%")) +
       theme_minimal() +
       scale_fill_brewer(palette = "Set2")
