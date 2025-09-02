@@ -30,6 +30,7 @@ The application implements the Clopper-Pearson exact method for constructing con
 **Precision-Based Method:**
 - Target Threshold (%) - Prespecified performance threshold (0.1-99.9%)
 - Expected Proportion (%) - Proportion expected to be observed in the study (0.1-99.9%)
+- [Optional] Target Precision (%) - Desired level of precision (0.1-99.9%) 
 
 ### Output
 - **Results Table**: Sample size requirements with relevant statistical parameters
