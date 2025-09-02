@@ -199,8 +199,12 @@ ui <- fluidPage(
                            numericInput("exp_proportion", "Expected Proportion (%)", value = NA, min = 0.1, max = 99.9, step = 0.1),
                            div(style = "margin: 10px 0; padding: 8px; background-color: #f8f9fa; border-left: 4px solid #007bff;",
                                textOutput("threshold_display")),
+                           numericInput("max_precision", "Target Precision (%)", value = NA, min = 0.1, max = 99.9, step = 0.1),
+                           div(style = "margin: 5px 0; padding: 5px; background-color: #fff3cd; border-left: 3px solid #ffc107; font-size: 0.9em;",
+                               "Note: Target Precision will auto-update when Expected Proportion or Threshold changes, but you can override it manually."),
                            actionButton("run_precision", "Run Precision-Based Calculation")
                   )
+                  
       )
     ),
     mainPanel(
@@ -216,7 +220,7 @@ ui <- fluidPage(
   )
 )
 
-server <- function(input, output) {
+server <- function(input, output, session) {
   
   # Create reactive values to store the error state and message
   error_state <- reactiveVal(FALSE)
@@ -235,19 +239,50 @@ server <- function(input, output) {
   # Create a reactive value to store the calculation result
   result <- reactiveVal(NULL)
   
-  # Target precision
+  # Target precision (modified to handle manual input)
   max_precision <- reactive({
     if (!is.na(input$threshold) && !is.na(input$exp_proportion)) {
-      input$exp_proportion - input$threshold
+      calculated_precision <- input$exp_proportion - input$threshold
+      
+      # If user hasn't manually set max_precision or if it's NA, use calculated value
+      if (is.na(input$max_precision)) {
+        return(calculated_precision)
+      } else {
+        return(input$max_precision)
+      }
     } else {
-      NULL
+      return(input$max_precision)
     }
   })
   
-  # To display the expected proportion
+  # Observer to auto-update max_precision input when threshold or exp_proportion changes
+  observe({
+    if (!is.na(input$threshold) && !is.na(input$exp_proportion)) {
+      calculated_precision <- input$exp_proportion - input$threshold
+      
+      # Only update if the current max_precision is NA or if it matches the previous calculation
+      # This prevents overwriting user's manual input
+      if (is.na(input$max_precision)) {
+        updateNumericInput(session, "max_precision", value = calculated_precision)
+      }
+    }
+  })
+  
+  # To display the expected proportion (updated)
   output$threshold_display <- renderText({
-    if (!is.null(max_precision())) {
-      paste0("Target Precision: ", round(max_precision(), 1), "%")
+    if (!is.na(input$threshold) && !is.na(input$exp_proportion)) {
+      calculated_precision <- input$exp_proportion - input$threshold
+      current_precision <- max_precision()
+      
+      if (!is.null(current_precision)) {
+        if (abs(current_precision - calculated_precision) < 0.001) {
+          paste0("Target Precision: ", round(current_precision, 1), "% (Auto-calculated)")
+        } else {
+          paste0("Target Precision: ", round(current_precision, 1), "% (Manually set | Auto-calculated would be: ", round(calculated_precision, 1), "%)")
+        }
+      } else {
+        "Target Precision: Please enter valid threshold and expected proportion values"
+      }
     } else {
       "Target Precision: Please enter valid threshold and expected proportion values"
     }
@@ -294,19 +329,27 @@ server <- function(input, output) {
     
   })
   
-  # Observe Precision-Based action button
+  # Observe Precision-Based action button (updated)
   observeEvent(input$run_precision, {
     params$method <- "Precision-Based"
     params$threshold <- input$threshold
     params$p1 <- input$exp_proportion
-    params$max_precision <- input$exp_proportion - input$threshold
+    params$max_precision <- max_precision()  # Use the reactive value
     
     req(params$threshold, params$p1, params$max_precision)
     
     # Error message case 1
     if (params$max_precision <= 0) {
       error_state(TRUE)
-      error_message("Expected proportion must be greater than the threshold.")
+      error_message("Target precision must be greater than 0.")
+      result(NULL)
+      return()
+    }
+    
+    # Additional error check: if manually set precision is larger than expected proportion
+    if (params$max_precision >= params$p1) {
+      error_state(TRUE)
+      error_message("Target precision must be less than the expected proportion.")
       result(NULL)
       return()
     }
@@ -380,7 +423,7 @@ server <- function(input, output) {
   
 }
 
-
 # Launch App
 shinyApp(ui = ui, server = server)
+
 
