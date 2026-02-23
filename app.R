@@ -6,11 +6,10 @@ library(DT)
 library(dplyr)
 library(ggplot2)
 
-
 ### Precision-based Sample Size Calculator
-clopper.pearson.sample.size <- function(min = 20, max = 1500, stepsize = 5, thres, max_precision,
+clopper.pearson.sample.size <- function(min = 20, max = 1500, stepsize = 5, thres, exp_proportion, max_precision,
                                         alpha = 0.025) {
-  p = (thres+max_precision)/100   # Note that actual precision <= Target precision = expected proportion - threshold
+  p = exp_proportion/100  # Use the actual expected proportion entered by user
   n <- seq(min, max, by = stepsize)
   fin <- data.frame()
   stop <- 0
@@ -21,9 +20,10 @@ clopper.pearson.sample.size <- function(min = 20, max = 1500, stepsize = 5, thre
     act_proportion <- floor(i * p)*100/i  # Observed proportion can be different from the expected proportion due to flooring
     lb <- lbd_CPCI*100
     lb_err <- (act_proportion - max_precision - lb)
-    act_precision <- act_proportion - lb   # Actual precision : Observed proportion - Derived lower bound
+    act_precision <- act_proportion - lb  # Actual precision : Observed proportion - Derived lower bound
     
-    if (lb > thres) {
+    # Check both conditions: lower bound > threshold AND actual precision <= target precision
+    if (lb > thres && act_precision <= max_precision) {
       res <- data.frame(Proportion = act_proportion,
                         Precision = act_precision,
                         Size = i)
@@ -357,6 +357,7 @@ server <- function(input, output, session) {
     withProgress(message = "Calculating required sample size...", value = 0.5, {
       calc_result <- clopper.pearson.sample.size(
         thres = params$threshold,
+        exp_proportion = params$p1,  # Pass expected proportion separately
         max_precision = params$max_precision,
         stepsize = 5
       )
@@ -365,9 +366,9 @@ server <- function(input, output, session) {
     if (identical(calc_result, "Out of range")) {
       error_state(TRUE)
       error_message("The calculation resulted in a sample size outside the acceptable range
-                    of 20 to 1,500 subjects. Please adjust your input parameters, particularly 
-                    ensuring that the precision is sufficiently large to yield a sample size within
-                    the specified range.")
+                  of 20 to 1,500 subjects. Please adjust your input parameters, particularly 
+                  ensuring that the precision is sufficiently large to yield a sample size within
+                  the specified range.")
       result(NULL)
     } else {
       error_state(FALSE)
@@ -425,5 +426,6 @@ server <- function(input, output, session) {
 
 # Launch App
 shinyApp(ui = ui, server = server)
+
 
 
