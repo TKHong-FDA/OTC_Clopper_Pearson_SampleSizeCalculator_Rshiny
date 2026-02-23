@@ -10,10 +10,12 @@ library(ggplot2)
 clopper.pearson.sample.size <- function(min = 20, max = 1500, stepsize = 5, thres, exp_proportion, max_precision,
                                         alpha = 0.025) {
   p = exp_proportion/100  # Use the actual expected proportion entered by user
+  p0 = thres/100  # Null hypothesis proportion (threshold)
   n <- seq(min, max, by = stepsize)
   fin <- data.frame()
   stop <- 0
   res <- NA
+  first_n <- NA
   
   for (i in n) {
     lbd_CPCI <- binom.test(x = floor(i * p), n = i, p = p, alternative = 'greater', conf.level = (1-alpha))$conf.int[1]
@@ -24,23 +26,88 @@ clopper.pearson.sample.size <- function(min = 20, max = 1500, stepsize = 5, thre
     
     # Check both conditions: lower bound > threshold AND actual precision <= target precision
     if (lb > thres && act_precision <= max_precision) {
-      res <- data.frame(Proportion = act_proportion,
-                        Precision = act_precision,
-                        Size = i)
+      first_n <- i
       stop = stop + 1
     }
     if (stop >0) {break}
   }
   
-  if (sum(!is.na(res))>0) {
-    colnames(res) <- c( "Observed Proportion (%)", "Observed Precision (%)", "Sample Size")
-    result = res
+  # If we found a valid n, calculate for 4 candidates: n, n+5, n+10, n+15
+  if (!is.na(first_n)) {
+    candidates <- first_n + c(0, stepsize, 2*stepsize, 3*stepsize)
+    candidates <- candidates[candidates <= max]  # Don't exceed max
+    
+    candidate_results <- data.frame()
+    
+    for (n_candidate in candidates) {
+      lbd_CPCI <- binom.test(x = floor(n_candidate * p), n = n_candidate, p = p, 
+                             alternative = 'greater', conf.level = (1-alpha))$conf.int[1]
+      act_proportion <- floor(n_candidate * p)*100/n_candidate
+      lb <- lbd_CPCI*100
+      act_precision <- act_proportion - lb
+      
+      # Calculate power: probability of rejecting H0 when true proportion is p
+      # Rejection region: those x values where lower bound of CI > p0
+      x_vals <- 0:n_candidate
+      reject_region <- sapply(x_vals, function(x) {
+        ci_lb <- binom.test(x, n_candidate, p = p0, alternative = 'greater', 
+                            conf.level = (1-alpha))$conf.int[1]
+        return(ci_lb > p0)
+      })
+      
+      # Power = P(reject H0 | true p = p1)
+      reject_x <- x_vals[reject_region]
+      if (length(reject_x) > 0) {
+        power_val <- sum(dbinom(reject_x, n_candidate, p))
+      } else {
+        power_val <- 0
+      }
+      
+      candidate_results <- rbind(candidate_results, 
+                                 data.frame(
+                                   n = n_candidate,
+                                   Proportion = act_proportion,
+                                   Precision = act_precision,
+                                   Power = power_val * 100,
+                                   meets_precision = (lb > thres && act_precision <= max_precision)
+                                 ))
+    }
+    
+    # Filter: 1) Keep only those meeting precision requirement
+    candidate_results <- candidate_results[candidate_results$meets_precision, ]
+    
+    if (nrow(candidate_results) > 0) {
+      # Filter: 2) Keep only those with power >= mean power
+      mean_power <- mean(candidate_results$Power)
+      candidate_results <- candidate_results[candidate_results$Power >= mean_power, ]
+      
+      if (nrow(candidate_results) > 0) {
+        # Select the smallest n
+        final_result <- candidate_results[candidate_results$n == min(candidate_results$n), ]
+        
+        res <- data.frame(
+          Proportion = final_result$Proportion,
+          Precision = final_result$Precision,
+          Power = final_result$Power,
+          Size = final_result$n
+        )
+        
+        colnames(res) <- c("Observed Proportion (%)", "Observed Precision (%)", 
+                           "Power (%)", "Sample Size")
+        result = res
+      } else {
+        result = "Out of range"
+      }
+    } else {
+      result = "Out of range"
+    }
   } else {
     result = "Out of range"
   }
   
   return(result)
 }
+
 
 ### Power-based Sample Size Calculator
 powerbased_CP = function(p0, p1, alpha = 0.025, power, stepsize=5, max=1500) {
@@ -391,9 +458,10 @@ server <- function(input, output, session) {
         formatRound(c(1,2,3), digits = 1)
     } else {
       datatable(result(), options = list(pageLength = 10)) %>% 
-        formatRound(c(1,2), digits = 1)
+        formatRound(c(1,2,3), digits = 1)  # Now includes Power column
     }
   })
+  
   
   # Reactive expression to generate the plot
   plot_data <- reactive({
@@ -426,6 +494,7 @@ server <- function(input, output, session) {
 
 # Launch App
 shinyApp(ui = ui, server = server)
+
 
 
 
